@@ -1,55 +1,202 @@
 import math
 import warnings
 import ui
+
+# ------
+# Bridge
+# ------
+#
+# Great examples here:
+# https://github.com/zacbir/geometriq/blob/master/geometriq/backends/_quartz.py
+
+import ctypes
+import objc_util
 from objc_util import ObjCClass, ObjCInstance
 
+cBool = ctypes.c_bool
+cInt = ctypes.c_size_t
+cUInt = ctypes.c_uint
+cUInt32 = ctypes.c_uint32
+cStrOrVoid = ctypes.c_wchar_p
+cIntOrVoid = ctypes.c_void_p
+
 def ObjCConstant(name):
-    import ctypes
-    from objc_util import c
-    return ObjCInstance(ctypes.c_void_p.in_dll(c, name))
+    return ObjCInstance(ctypes.c_void_p.in_dll(objc_util.c, name))
 
+# Quartz
 
+quartz = objc_util.c
+
+CGFloat = objc_util.CGFloat
+CGPoint = objc_util.CGPoint
+CGSize = objc_util.CGSize
+CGRect = objc_util.CGRect
+CGAffineTransform = objc_util.CGAffineTransform
+CGBitmapInfo = cUInt32
+
+kCGLineJoinMiter = 0
+kCGLineJoinRound = 1
+kCGLineJoinBevel = 2
+kCGLineCapButt = 0
+kCGLineCapRound = 1
+kCGLineCapSquare = 2
+
+CGContextConcatCTM = quartz.CGContextConcatCTM
+CGContextConcatCTM.restype = None
+CGContextConcatCTM.argtypes = [
+    cIntOrVoid,
+    CGAffineTransform
+]
+
+CGContextSaveGState = quartz.CGContextSaveGState
+CGContextSaveGState.restype = None
+CGContextSaveGState.argtypes = [cIntOrVoid]
+
+CGContextRestoreGState = quartz.CGContextRestoreGState
+CGContextRestoreGState.restype = None
+CGContextRestoreGState.argtypes = [cIntOrVoid]
+
+# Foundation
+
+NSMutableData = objc_util.NSMutableData
+NSColor = ObjCClass("NSColor")
 NSAttributedString = ObjCClass("NSAttributedString")
 NSFont = ObjCClass("NSFont")
-NSColor = ObjCClass("NSColor")
 NSFontAttributeName = ObjCConstant("NSFontAttributeName")
 NSForegroundColorAttributeName = ObjCConstant("NSForegroundColorAttributeName")
 
+# UIKit
+
+UIBezierPath = ObjCClass("UIBezierPath")
+UIImage = ObjCClass("UIImage")
+
+UIGraphicsBeginImageContext = quartz.UIGraphicsBeginImageContext
+UIGraphicsBeginImageContext.restype = None
+UIGraphicsBeginImageContext.argtypes = [CGSize]
+
+UIGraphicsEndImageContext = quartz.UIGraphicsEndImageContext
+UIGraphicsEndImageContext.restype = None
+UIGraphicsEndImageContext.argtypes = []
+
+UIGraphicsGetCurrentContext = quartz.UIGraphicsGetCurrentContext
+UIGraphicsGetCurrentContext.restype = cIntOrVoid
+UIGraphicsGetCurrentContext.argtypes = []
+
+UIGraphicsGetImageFromCurrentImageContext = quartz.UIGraphicsGetImageFromCurrentImageContext
+UIGraphicsGetImageFromCurrentImageContext.restype = cIntOrVoid
+UIGraphicsGetImageFromCurrentImageContext.argtypes = []
+
+def UIImagePNGRepresentation(image):
+    return ObjCInstance(quartz.UIImagePNGRepresentation(image))
+
+quartz.UIImagePNGRepresentation.restype = cIntOrVoid
+quartz.UIImagePNGRepresentation.argtypes = [cIntOrVoid]
+
+
+# ------------
+# Drawing Tool
+# ------------
 
 class DrawBotDrawingTool(object):
 
     def __init__(self):
         self._width = 500
         self._height = 500
-        self._ctx = PythonistaViewContext()
+        self._instructionStack = []
+
+    def _addInstruction(self, callback, *args, **kwargs):
+        if not self._instructionStack:
+            self._instructionStack.append([])
+        self._instructionStack[-1].append((callback, args, kwargs))
+
+    def _drawInContext(self, context):
+        for instructionSet in self._instructionStack:
+            for callback, args, kwargs in instructionSet:
+                method = getattr(context, callback)
+                method(*args, **kwargs)
+
+    # ----------
+    # Image Data
+    # ----------
+
+    def imageData(self, format, *args, **kwargs):
+        if format == "PNG":
+            context = PNGContext(self._width, self._height)
+        else:
+            raise NotImplementedError("format '%s' is not supported" % fileType)
+        self._drawInContext(context)
+        return context.imageData()
+
+    # -------------
+    # Display Image
+    # -------------
+
+    def displayImage(self, mode="screen"):
+        modes = dict(
+            screen="full_screen",
+            sheet="sheet",
+            popover="popover",
+            panel="panel",
+            sidebar="sidebar"
+        )
+        mode = modes[mode]
+        data = self.imageData("PNG")
+        if data is None:
+            return
+        view = ui.ImageView(
+            frame=(0, 0, self._width, self._height),
+            background_color=1
+        )
+        view.content_mode = ui.CONTENT_CENTER
+        view.image = ui.Image.from_data(data)
+        view.present(mode)
 
     # ------
     # Canvas
     # ------
 
     def size(self, width, height=None):
-        # XXX support strings
+        if width == "screen":
+            width, height = ui.get_screen_size()
         if height is None:
             height = width
-        self._width = width
-        self._height = height
+        self._width = int(width)
+        self._height = int(height)
+
+    def width(self):
+        return self._width
+
+    def height(self):
+        return self._height
 
     def newDrawing(self):
         pass
 
     def endDrawing(self):
-        self._ctx.setSize(self._width, self._height)
-        self._ctx.present("sheet")
+        pass
+
+    # ------
+    # States
+    # ------
+
+    def save(self):
+        self._addInstruction("save")
+
+    def restore(self):
+        self._addInstruction("restore")
+
+    def savedState(self):
+        return SavedStateContextManager(self)
 
     # ------
     # Colors
     # ------
 
     def fill(self, r, g=None, b=None, alpha=1):
-        self._ctx.addInstruction("fill", r, g, b, alpha)
+        self._addInstruction("fill", r, g, b, alpha)
 
     def stroke(self, r, g=None, b=None, alpha=1):
-        self._ctx.addInstruction("stroke", r, g, b, alpha)
+        self._addInstruction("stroke", r, g, b, alpha)
 
     # ------
     # Shapes
@@ -58,81 +205,59 @@ class DrawBotDrawingTool(object):
     def rect(self, x, y, w, h):
         path = BezierPath()
         path.rect(x, y, w, h)
-        self._ctx.addInstruction("drawPath", path)
+        self._addInstruction("drawPath", path)
 
     def oval(self, x, y, w, h):
         path = BezierPath()
         path.oval(x, y, w, h)
-        self._ctx.addInstruction("drawPath", path)
+        self._addInstruction("drawPath", path)
 
     def polygon(self, *points, **kwargs):
         path = BezierPath()
         path.polygon(*points, **kwargs)
-        self._ctx.addInstruction("drawPath", path)
+        self._addInstruction("drawPath", path)
 
     def line(self, point1, point2):
         path = BezierPath()
         path.line(point1, point2)
-        self._ctx.addInstruction("drawPath", path)
+        self._addInstruction("drawPath", path)
 
     # Path Properties
 
     def strokeWidth(self, value):
-        self._ctx.addInstruction("strokeWidth", value)
+        self._addInstruction("strokeWidth", value)
 
     def miterLimit(self, value):
-        self._ctx.addInstruction("miterLimit", value)
+        self._addInstruction("miterLimit", value)
 
     def lineJoin(self, value):
-        self._ctx.addInstruction("lineJoin", value)
+        self._addInstruction("lineJoin", value)
 
     def lineCap(self, value):
-        self._ctx.addInstruction("lineCap", value)
+        self._addInstruction("lineCap", value)
 
     def lineDash(self, *value):
         if not value:
             raise DrawBotError("lineDash must be a list of dashes or None")
         if isinstance(value[0], (list, tuple)):
             value = value[0]
-        self._ctx.addInstruction("lineDash", value)
+        self._addInstruction("lineDash", value)
 
     # ----
     # Text
     # ----
 
-    """
-    hyphenation(value)
-    lineHeight(value)
-    tracking(value)
-    baselineShift(value)
-    openTypeFeatures(frac=True, case=True, ...)
-    language(language)
-    """
-
     def font(self, fontName, fontSize=None):
-        self._ctx.addInstruction("font", fontName, fontSize)
+        self._addInstruction("font", fontName, fontSize)
 
     def fontSize(self, fontSize):
-        self._ctx.addInstruction("fontSize", fontSize)
+        self._addInstruction("fontSize", fontSize)
 
     def textBox(self, txt, box, align=None):
         if not isinstance(txt, str):
             raise TypeError("expected 'str', got '%s'" % type(txt).__name__)
         assert align is None
-        self._ctx.addInstruction("textBox", txt, box)
-
-    # ------
-    # States
-    # ------
-
-    def save(self):
-        self._ctx.addInstruction("save")
-
-    def restore(self):
-        self._ctx.addInstruction("restore")
-
-    def savedState(self):
-        return SavedStateContextManager(self)
+        self._addInstruction("textBox", txt, box)
 
     # ---------------
     # Transformations
@@ -141,202 +266,27 @@ class DrawBotDrawingTool(object):
     def transform(self, matrix, center=(0, 0)):
         if center != (0, 0):
             warnings.warn("center is not implemented.")
-        self._ctx.addInstruction("transform", matrix)
+        self._addInstruction("transform", matrix)
 
     def translate(self, x=0, y=0):
-        self._ctx.addInstruction("translate", x=x, y=y)
-
-    def scale(self, x=1, y=None, center=(0, 0)):
-        if center != (0, 0):
-            warnings.warn("center is not implemented.")
-        if y is None:
-            y = x
-        self._ctx.addInstruction("scale", x=x, y=y)
+        self.transform((1, 0, 0, 1, x, y))
 
     def rotate(self, angle, center=(0, 0)):
-        if center != (0, 0):
-            warnings.warn("center is not implemented.")
         angle = math.radians(angle)
-        self._ctx.addInstruction("rotate", angle)
+        c = math.cos(angle)
+        s = math.sin(angle)
+        self.transform((c, s, -s, c, 0, 0), center)
+
+    def scale(self, x=1, y=None, center=(0, 0)):
+        if y is None:
+            y = x
+        self.transform((x, 0, 0, y, 0, 0), center)
 
     def skew(self, angle1, angle2=0, center=(0, 0)):
         angle1 = math.radians(angle1)
         angle2 = math.radians(angle2)
-        self.transform((1, math.tan(angle2), math.tan(angle1), 1, 0, 0))
+        self.transform((1, math.tan(angle2), math.tan(angle1), 1, 0, 0), center)
 
-
-# ----
-# View
-# ----
-
-class PythonistaViewContext(ui.View):
-
-    def __init__(self):
-        self.background_color = (1, 1, 1, 1)
-        self._db_instructionStack = []
-        self._db_stateStack = []
-        self._db_state = GraphicsState()
-
-    def setSize(self, width, height):
-        self.frame = (0, 0, width, height)
-        transform1 = ui.Transform.translation(0, -height)
-        transform2 = ui.Transform.scale(1.0, -1.0)
-        self.transform = transform1.concat(transform2)
-
-    def draw(self):
-        for instructionSet in self._db_instructionStack:
-            instructionSet = list(instructionSet)
-            self._executeInstructions(instructionSet)
-
-    def _executeInstructions(self, instructions):
-        while instructions:
-            callback, args, kwargs = instructions.pop(0)
-            if callback == "restore":
-                self._db_restore()
-                return
-            elif callback == "save":
-                self._db_save()
-                with ui.GState():
-                    self._executeInstructions(instructions)
-            else:
-                callback = "_db_" + callback
-                method = getattr(self, callback)
-                method(*args, **kwargs)
-
-    # ------------
-    # Instructions
-    # ------------
-
-    def addInstruction(self, callback, *args, **kwargs):
-        if not self._db_instructionStack:
-            self._db_instructionStack.append([])
-        self._db_instructionStack[-1].append((callback, args, kwargs))
-
-    # Colors
-
-    def _db_fill(self, r, g=None, b=None, a=1):
-        if r is None:
-            self._db_state.fillColor = None
-            return
-        self._db_state.fillColor = (r, g, b, a)
-
-    def _db_stroke(self, r, g=None, b=None, a=1):
-        if r is None:
-            self._db_state.strokeColor = None
-            return
-        self._db_state.strokeColor = (r, g, b, a)
-
-    # Paths
-
-    def _db_drawPath(self, path):
-        state = self._db_state
-        if path is not None:
-            state.path = path
-        if state.path:
-            path = state.path._path
-            path.objc_instance.setMiterLimit_(state.miterLimit)
-            path.line_join_style = lineJoinStyles[state.lineJoin]
-            path.line_cap_style = lineCapStyles[state.lineCap]
-            if state.lineDash is not None:
-                path.set_line_dash(state.lineDash)
-            if state.fillColor is not None:
-                ui.set_color(state.fillColor)
-                path.fill()
-            if state.strokeColor is not None:
-                ui.set_color(state.strokeColor)
-                if state.strokeWidth is not None:
-                    path.line_width = state.strokeWidth
-                path.stroke()
-
-    # Path Properties
-
-    def _db_strokeWidth(self, value):
-        self._db_state.strokeWidth = value
-
-    def _db_miterLimit(self, value):
-        self._db_state.miterLimit = value
-
-    def _db_lineJoin(self, value):
-        self._db_state.lineJoin = value
-
-    def _db_lineCap(self, value):
-        self._db_state.lineCap = value
-
-    def _db_lineDash(self, value):
-        if value[0] is None:
-            value = None
-        self._db_state.lineDash = value
-
-    # Text
-
-    def _db_font(self, fontName, fontSize):
-        self._db_state.text_fontName = fontName
-        if fontSize is not None:
-            self._db_state.text_fontSize = fontSize
-
-    def _db_fontSize(self, fontSize):
-        self._db_state.text.text_fontSize = fontSize
-
-    def _db_textBox(self, txt, box):
-        with ui.GState():
-            x, y, w, h = box
-            self._db_translate(x, y + h)
-            self._db_scale(1, -1)
-            font = None
-            if self._db_state.text_fontName is not None:
-                font = NSFont.fontWithName_size_(
-                    self._db_state.text_fontName,
-                    self._db_state.text_fontSize
-                )
-            if font is None:
-                font = NSFont.systemFontOfSize_(self._db_state.text_fontSize)
-            r, g, b, a = self._db_state.fillColor
-            fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, a)
-            attrs = {
-                NSFontAttributeName : font,
-                NSForegroundColorAttributeName : fillColor
-            }
-            string = NSAttributedString.alloc().initWithString_attributes_(txt, attrs)
-            string.drawInRect_(((0, 0), (w, h)))
-
-    # States
-
-    def _db_save(self):
-        self._db_stateStack.append(self._db_state.copy())
-
-    def _db_restore(self):
-        if not self._db_stateStack:
-            raise DrawBotError("can't restore graphics state: no matching save()'")
-        self._db_state = self._db_stateStack.pop()
-
-    # Transformations
-
-    def _db_transform(self, matrix):
-        warnings.warn("transform is not implemented.")
-
-    def _db_translate(self, x=0, y=0):
-        transform = ui.Transform.translation(x, y)
-        ui.concat_ctm(transform)
-
-    def _db_scale(self, x, y):
-        transform = ui.Transform.scale(x, y)
-        ui.concat_ctm(transform)
-
-    def _db_rotate(self, angle):
-        transform = ui.Transform.rotation(angle)
-        ui.concat_ctm(transform)
-
-
-lineJoinStyles = dict(
-    miter=ui.LINE_JOIN_MITER,
-    round=ui.LINE_JOIN_ROUND,
-    bevel=ui.LINE_JOIN_BEVEL
-)
-lineCapStyles = dict(
-    butt=ui.LINE_CAP_BUTT,
-    round=ui.LINE_CAP_ROUND,
-    square=ui.LINE_CAP_SQUARE
-)
 
 # --------------
 # Graphics State
@@ -384,7 +334,6 @@ class GraphicsState(object):
         new._loadAttributes(self)
         return new
 
-
 # -----------
 # Bezier Path
 # -----------
@@ -394,64 +343,35 @@ class BezierPath(object):
     def __init__(self, path=None, glyphSet=None):
         assert glyphSet is None
         if path is None:
-            path = ui.Path()
+            path = UIBezierPath.bezierPath()
         self._path = path
 
     # Pen
 
     def moveTo(self, point):
-        self._path.move_to(*point)
+        self._path.moveToPoint_(CGPoint(*point))
 
     def lineTo(self, point):
-        self._path.line_to(*point)
+        self._path.lineToPoint_(CGPoint(*point))
 
     def curveTo(self, *points):
-        self._path.curve_to(*points)
-
-    def qCurveTo(self, *points):
-        warnings.warn("BezierPath.qCurveTo is not implemented.")
+        self._path.curveToPoint_controlPoint1_controlPoint2_(CGPoint(*points[2]), *points[0], *points[1])
 
     def closePath(self):
-        self._path.close()
+        self._path.closePath()
 
     def endPath(self):
         pass
 
-    # Point Pen
-
-    def beginPath(self, *args, **kwargs):
-        warnings.warn("BezierPath.beginPath is not implemented.")
-
-    def addPoint(self, *args, **kwargs):
-        warnings.warn("BezierPath.addPoint is not implemented.")
-
-    def addComponent(self, *args, **kwargs):
-        warnings.warn("BezierPath.addComponent is not implemented.")
-
-    # Drawing
-
-    def drawToPen(self, *args, **kwargs):
-        warnings.warn("BezierPath.drawToPen is not implemented.")
-
-    def drawToPointPen(self, *args, **kwargs):
-        warnings.warn("BezierPath.drawToPointPen is not implemented.")
-
     # Shapes
 
-    def arc(self, center, radius, startAngle, endAngle, clockwise):
-        x, y = center
-        self._path.add_arc(x, y, radius, startAngle, endAngle, clockwise)
-
-    def arcTo(self, point1, point2, radius):
-        warnings.warn("BezierPath.arcTo is not implemented.")
-
     def rect(self, x, y, w, h):
-        sub = ui.Path().rect(x, y, w, h)
-        self._path.append_path(sub)
+        sub = UIBezierPath.bezierPathWithRect_(CGRect(CGPoint(x, y), CGSize(w, h)))
+        self._path.appendPath_(sub)
 
     def oval(self, x, y, w, h):
-        sub = ui.Path().oval(x, y, w, h)
-        self._path.append_path(sub)
+        sub = UIBezierPath.bezierPathWithOvalInRect_(CGRect(CGPoint(x, y), CGSize(w, h)))
+        self._path.appendPath_(sub)
 
     def line(self, point1, point2):
         self.moveTo(point1)
@@ -463,74 +383,30 @@ class BezierPath(object):
         doClose = kwargs.get("close", True)
         if (len(kwargs) == 1 and "close" not in kwargs) or len(kwargs) > 1:
             raise TypeError("unexpected keyword argument for this function")
-
         self.moveTo(points[0])
         for x, y in points[1:]:
             self.lineTo((x, y))
         if doClose:
             self.closePath()
 
-    # Text
-
-    def text(self, *args, **kwargs):
-        warnings.warn("BezierPath.text is not implemented.")
-
-    def textBox(self, *args, **kwargs):
-        warnings.warn("BezierPath.textBox is not implemented.")
-
     # Path Testing and Properties
 
     def pointInside(self, point):
-        x, y = point
-        return self._path.hit_test(x, y)
+        return self._path.containsPoint_(CGPoint(*point))
 
     def bounds(self):
-        return self._path.bounds
-
-    def controlPointBounds(self):
-        warnings.warn("BezierPath.controlPointBounds is not implemented.")
-
-    # Trace
-
-    def traceImage(self, *args, **kwargs):
-        warnings.warn("BezierPath.traceImage is not implemented.")
+        (x, y), (w, h) = self._path.bounds()
+        return (x, y, w, h)
 
     # Path Operations
-
-    def optimizePath(self):
-        warnings.warn("BezierPath.optimizePath is not implemented.")
 
     def copy(self):
         new = self.__class__()
         new.appendPath(self)
         return new
 
-    def reverse(self):
-        # XXX
-        # this could be implemented by:
-        # 1. make a new UIBezierPath with 
-        #    self._path.objc_instance.bezierPathByReversingPath()
-        # 2. clear this path with o_i.removeAllPoints()
-        # 3. append the reversed path to this path
-        warnings.warn("BezierPath.reverse is not implemented.")
-
     def appendPath(self, otherPath):
-        self._path.append_path(otherPath._path)
-
-    def __add__(self, otherPath):
-        warnings.warn("BezierPath.__add__ is not implemented.")
-
-    def __iadd__(self, other):
-        self.appendPath(other)
-        return self
-
-    # NSBezierPath
-
-    def getNSBezierPath(self, *args, **kwargs):
-        return self._path.objc_instance
-
-    def setNSBezierPath(self, *args, **kwargs):
-        warnings.warn("BezierPath.setNSBezierPath is not implemented.")
+        self._path.appendPath_(otherPath._path)
 
     # Transformations
 
@@ -554,93 +430,159 @@ class BezierPath(object):
         self.transform((1, math.tan(angle2), math.tan(angle1), 1, 0, 0), center)
 
     def transform(self, transformMatrix, center=(0, 0)):
-        warnings.warn("BezierPath.transform is not implemented.")
+        if center != (0, 0):
+            warnings.warn("center is not implemented.")
+        transform = CGAffineTransform(*transformMatrix)
+        self._path.applyTransform_(transform)
 
-    # Boolean Operations
+# -------
+# Context
+# -------
 
-    def union(self, other):
-        warnings.warn("BezierPath.union is not implemented.")
+lineJoinStyles = dict(
+    miter=kCGLineJoinMiter,
+    round=kCGLineJoinRound,
+    bevel=kCGLineJoinBevel
+)
+lineCapStyles = dict(
+    butt=kCGLineCapButt,
+    round=kCGLineCapRound,
+    square=kCGLineCapSquare
+)
 
-    def removeOverlap(self):
-        warnings.warn("BezierPath.removeOverlap is not implemented.")
+class BaseContext(object):
 
-    def difference(self, other):
-        warnings.warn("BezierPath.difference is not implemented.")
+    def __init__(self):
+        self.stateStack = []
+        self.state = GraphicsState()
 
-    def intersection(self, other):
-        warnings.warn("BezierPath.intersection is not implemented.")
+    # ------------
+    # Instructions
+    # ------------
 
-    def xor(self, other):
-        warnings.warn("BezierPath.xor is not implemented.")
+    # Colors
 
-    def intersectionPoints(self, other=None):
-        warnings.warn("BezierPath.intersectionPoints is not implemented.")
+    def fill(self, r, g=None, b=None, a=1):
+        if r is None:
+            self.state.fillColor = None
+            return
+        self.state.fillColor = (r, g, b, a)
 
-    def expandStroke(self, width, lineCap="round", lineJoin="round", miterLimit=10):
-        warnings.warn("BezierPath.expandStroke is not implemented.")
+    def stroke(self, r, g=None, b=None, a=1):
+        if r is None:
+            self.state.strokeColor = None
+            return
+        self.state.strokeColor = (r, g, b, a)
 
-    def __mod__(self, other):
-        warnings.warn("BezierPath.__mod__ is not implemented.")
+    # Paths
 
-    __rmod__ = __mod__
+    def drawPath(self, path):
+        state = self.state
+        if path is not None:
+            state.path = path
+        if state.path:
+            path = state.path._path
+            path.setMiterLimit_(state.miterLimit)
+            path.setLineJoinStyle_(lineJoinStyles[state.lineJoin])
+            path.setLineCapStyle_(lineCapStyles[state.lineCap])
+            # if state.lineDash is not None:
+            #     path.set_line_dash(state.lineDash)
+            if state.fillColor is not None:
+                fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(*state.fillColor)
+                fillColor.set()
+                path.fill()
+            if state.strokeColor is not None:
+                strokeColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(*state.strokeColor)
+                strokeColor.set()
+                if state.strokeWidth is not None:
+                    path.setLineWidth_(state.strokeWidth)
+                path.stroke()
 
-    def __imod__(self, other):
-        warnings.warn("BezierPath.__imod__ is not implemented.")
+    # Path Properties
 
-    def __or__(self, other):
-        warnings.warn("BezierPath.__or__ is not implemented.")
+    def strokeWidth(self, value):
+        self.state.strokeWidth = value
 
-    __ror__ = __or__
+    def miterLimit(self, value):
+        self.state.miterLimit = value
 
-    def __ior__(self, other):
-        warnings.warn("BezierPath.__ior__ is not implemented.")
+    def lineJoin(self, value):
+        self.state.lineJoin = value
 
-    def __and__(self, other):
-        warnings.warn("BezierPath.__and__ is not implemented.")
+    def lineCap(self, value):
+        self.state.lineCap = value
 
-    __rand__ = __and__
+    def lineDash(self, value):
+        if value[0] is None:
+            value = None
+        self.state.lineDash = value
 
-    def __iand__(self, other):
-        warnings.warn("BezierPath.__iand__ is not implemented.")
+    # Text
 
-    def __xor__(self, other):
-        warnings.warn("BezierPath.__xor__ is not implemented.")
+    def font(self, fontName, fontSize):
+        self.state.text_fontName = fontName
+        if fontSize is not None:
+            self.state.text_fontSize = fontSize
 
-    __rxor__ = __xor__
+    def fontSize(self, fontSize):
+        self.state.text.text_fontSize = fontSize
 
-    def __ixor__(self, other):
-        warnings.warn("BezierPath.__ixor__ is not implemented.")
+    def textBox(self, txt, box):
+        CGContextSaveGState(self._context)
+        x, y, w, h = box
+        self.transform((1, 0, 0, 1, x, y + h))
+        self.transform((1, 0, 0, -1, 0, 0))
+        font = None
+        if self.state.text_fontName is not None:
+            font = NSFont.fontWithName_size_(
+                self.state.text_fontName,
+                self.state.text_fontSize
+            )
+        if font is None:
+            font = NSFont.systemFontOfSize_(self.state.text_fontSize)
+        r, g, b, a = self.state.fillColor
+        fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, a)
+        attrs = {
+            NSFontAttributeName : font,
+            NSForegroundColorAttributeName : fillColor
+        }
+        string = NSAttributedString.alloc().initWithString_attributes_(txt, attrs)
+        string.drawInRect_(((0, 0), (w, h)))
+        CGContextRestoreGState(self._context)
 
-    # Points
+    # States
 
-    def _get_points(self):
-        warnings.warn("BezierPath.points is not implemented.")
+    def save(self):
+        self.stateStack.append(self.state.copy())
+        CGContextSaveGState(self._context)
 
-    points = property(_get_points)
+    def restore(self):
+        if not self.stateStack:
+            raise DrawBotError("can't restore graphics state: no matching save()'")
+        self.state = self.stateStack.pop()
+        CGContextRestoreGState(self._context)
 
-    def _get_onCurvePoints(self):
-        warnings.warn("BezierPath.onCurvePoints is not implemented.")
+    # Transformations
 
-    onCurvePoints = property(_get_onCurvePoints)
+    def transform(self, transformMatrix):
+        transform = CGAffineTransform(*transformMatrix)
+        CGContextConcatCTM(self._context, transform)
 
-    def _get_offCurvePoints(self):
-        warnings.warn("BezierPath.offCurvePoints is not implemented.")
 
-    offCurvePoints = property(_get_offCurvePoints)
+class PNGContext(BaseContext):
 
-    def _get_contours(self):
-        warnings.warn("BezierPath.contours is not implemented.")
+    def __init__(self, width, height):
+        super(PNGContext, self).__init__()
+        UIGraphicsBeginImageContext(CGSize(width, height))
+        self._context = UIGraphicsGetCurrentContext()
+        self.transform((1, 0, 0, -1, 0, height))
 
-    contours = property(_get_contours)
-
-#    def __len__(self):
-#        warnings.warn("BezierPath.__len__ is not implemented.")
-
-    def __getitem__(self, index):
-        warnings.warn("BezierPath.__getitem__ is not implemented.")
-
-    def __iter__(self):
-        warnings.warn("BezierPath.__iter__ is not implemented.")
+    def imageData(self):
+        image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        png = UIImagePNGRepresentation(image)
+        data = objc_util.nsdata_to_bytes(png)
+        return data
 
 
 # ----
@@ -649,7 +591,8 @@ class BezierPath(object):
 
 if __name__ == "__main__":
     bot = DrawBotDrawingTool()
-    
+
+    # origin
     bot.fill(0, 0, 0, 1)
     bot.rect(0, 0, 10, 10)
     
@@ -700,3 +643,6 @@ if __name__ == "__main__":
     bot.strokeWidth(1 / 3)
     bot.rect(0, 0, 100, 100)
     bot.endDrawing()
+
+    # display
+    bot.displayImage("sheet")
