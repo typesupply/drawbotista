@@ -1,4 +1,5 @@
 import math
+import random
 import warnings
 import ui
 
@@ -93,6 +94,19 @@ quartz.UIImagePNGRepresentation.restype = cIntOrVoid
 quartz.UIImagePNGRepresentation.argtypes = [cIntOrVoid]
 
 
+# ---------
+# API Magic
+# ---------
+
+def _getmodulecontents(module, names=None):
+    d = {}
+    if names is None:
+        names = [name for name in dir(module) if not name.startswith("_")]
+    for name in names:
+        d[name] = getattr(module, name)
+    return d
+
+
 # ------------
 # Drawing Tool
 # ------------
@@ -103,6 +117,20 @@ class DrawBotDrawingTool(object):
         self._width = 500
         self._height = 500
         self._instructionStack = []
+
+    def _get__all__(self):
+        return [i for i in dir(self) if not i.startswith("_")]
+
+    __all__ = property(_get__all__)
+
+    def _addToNamespace(self, namespace):
+        namespace.update(_getmodulecontents(self, self.__all__))
+        namespace.update(_getmodulecontents(random, ["random", "randint", "choice", "shuffle"]))
+        namespace.update(_getmodulecontents(math))
+
+    # ---------
+    # Internals
+    # ---------
 
     def _addInstruction(self, callback, *args, **kwargs):
         if not self._instructionStack:
@@ -131,9 +159,9 @@ class DrawBotDrawingTool(object):
     # Display Image
     # -------------
 
-    def displayImage(self, mode="screen"):
+    def displayImage(self, mode="fullscreen"):
         modes = dict(
-            screen="full_screen",
+            screen="fullscreen",
             sheet="sheet",
             popover="popover",
             panel="panel",
@@ -334,6 +362,7 @@ class GraphicsState(object):
         new._loadAttributes(self)
         return new
 
+
 # -----------
 # Bezier Path
 # -----------
@@ -434,6 +463,7 @@ class BezierPath(object):
             warnings.warn("center is not implemented.")
         transform = CGAffineTransform(*transformMatrix)
         self._path.applyTransform_(transform)
+
 
 # -------
 # Context
@@ -586,11 +616,18 @@ class PNGContext(BaseContext):
 
 
 # ----
+# Main
+# ----
+
+_drawBotDrawingTool = DrawBotDrawingTool()
+_drawBotDrawingTool._addToNamespace(globals())
+
+# ----
 # Test
 # ----
 
 if __name__ == "__main__":
-    bot = DrawBotDrawingTool()
+    bot = _drawBotDrawingTool
 
     # origin
     bot.fill(0, 0, 0, 1)
