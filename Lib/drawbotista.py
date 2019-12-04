@@ -161,7 +161,7 @@ class DrawBotDrawingTool(object):
 
     def displayImage(self, mode="fullscreen"):
         modes = dict(
-            screen="fullscreen",
+            fullscreen="full_screen",
             sheet="sheet",
             popover="popover",
             panel="panel",
