@@ -2,6 +2,13 @@
 
 This is a port of a subset of the [DrawBot API](https://www.drawbot.com) to [Pythonista](http://omz-software.com/pythonista/index.html).
 
+## Installing
+
+**If anyone has better installation instructions, *please* let me know.**
+
+You need to put the "drawbotista.py" in "Python-Modules/site-packages-3" inside of Pythonista.
+
+I've seen lots of references to installing modules with [StaSH](https://github.com/ywangd/stash) and `pip`. That works for fully released packages. However, at this point I'm not ready to make this an official release. There's a way to install modules from git via `pip` but I can't get it to work in Pythonista.
 
 ## To Do:
 
@@ -11,7 +18,7 @@ This is a port of a subset of the [DrawBot API](https://www.drawbot.com) to [Pyt
 
 ## API
 
-The API is currently focused on compatibility with DrawBot's static 2D image capabilities. PRs for more of the API is welcome.
+The API is currently focused on compatibility with DrawBot's static 2D image drawing capabilities. PRs for more of the API are welcome!
 
 ### Extra API:
 
