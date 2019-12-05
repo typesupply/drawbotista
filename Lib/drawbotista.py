@@ -4,6 +4,7 @@ import math
 import random
 import warnings
 import tempfile
+import shutil
 from PIL import Image as PILImage
 import ui
 import dialogs
@@ -184,20 +185,23 @@ class DrawBotDrawingTool(object):
     # Display Image
     # -------------
 
-    def displayImage(self, mode="fullscreen"):
+    def displayImage(self):
         if len(self._instructionStack) == 1:
             data = self.imageData("PNG")
-            if data is None:
-                return
-            DrawBotView(data, mode)
+            suffix = ".png"
         else:
             data = self.imageData("GIF")
-            path = tempfile.mkstemp(suffix=".gif")[1]
-            f = open(path, "wb")
-            f.write(data)
-            f.close()
-            console.quicklook(path)
-            os.remove(path)
+            suffix = ".gif"
+        if data is None:
+            return
+        directory = tempfile.mkdtemp()
+        fileName = "DrawBotista Preview" + suffix
+        path = os.path.join(directory, fileName)
+        f = open(path, "wb")
+        f.write(data)
+        f.close()
+        console.quicklook(path)
+        shutil.rmtree(directory)
 
     # ------
     # Canvas
@@ -728,39 +732,6 @@ class GIFContext(PNGContext):
             os.remove(path)
         return data
 
-# ----
-# View
-# ----
-
-class DrawBotView(object):
-
-    def __init__(self, imageData, mode):
-        modes = dict(
-            fullscreen="full_screen",
-            sheet="sheet",
-            popover="popover",
-            panel="panel",
-            sidebar="sidebar"
-        )
-        mode = modes[mode]
-        self.image = ui.Image.from_data(imageData)
-        width, height = self.image.size
-        self.imageView = ui.ImageView(
-            frame=(0, 0, width, height),
-            background_color=1
-        )
-        self.imageView.image = self.image
-        self.imageView.content_mode = ui.CONTENT_CENTER
-        self.shareButton = ui.ButtonItem(
-            image=ui.Image.named("iow:ios7_upload_outline_32")
-        )
-        self.shareButton.action = self.shareButtonCallback
-        self.imageView.right_button_items = [self.shareButton]
-        self.imageView.present(mode)
-
-    def shareButtonCallback(self, sender):
-        dialogs.share_image(self.image)
-
 
 # ----
 # Main
@@ -854,11 +825,11 @@ if __name__ == "__main__":
     bot.newDrawing()
     bot.frameDuration(1.0)
 
-#    drawTest(bot)
+    # drawTest(bot)
 
     for i in range(5):
         t = 10 * i
         bot.newPage()
         drawTest(bot, translate=(t, t))
 
-    bot.displayImage("sheet")
+    bot.displayImage()
