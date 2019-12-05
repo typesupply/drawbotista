@@ -505,11 +505,12 @@ class BaseContext(object):
             path.setMiterLimit_(state.miterLimit)
             path.setLineJoinStyle_(lineJoinStyles[state.lineJoin])
             path.setLineCapStyle_(lineCapStyles[state.lineCap])
-            #if state.lineDash is not None:
-            #    dash = state.lineDash
-            #    count = len(dash)
-            #    phase = 0
-            #    path.setLineDash_count_phase_(dash, count, phase)
+            if state.lineDash is not None:
+                dash = state.lineDash
+                count = len(dash)
+                phase = 0
+                dash = (CGFloat * count)(*dash)
+                path.setLineDash_count_phase_(dash, count, phase)
             if state.fillColor is not None:
                 fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(*state.fillColor)
                 fillColor.set()
