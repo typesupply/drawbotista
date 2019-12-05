@@ -1,8 +1,14 @@
+import os
+import io
 import math
 import random
 import warnings
+import tempfile
+from PIL import Image as PILImage
 import ui
 import dialogs
+import console
+import images2gif
 
 # ------
 # Bridge
@@ -114,9 +120,7 @@ def _getmodulecontents(module, names=None):
 class DrawBotDrawingTool(object):
 
     def __init__(self):
-        self._width = 500
-        self._height = 500
-        self._instructionStack = []
+        self._reset()
 
     def _get__all__(self):
         return [i for i in dir(self) if not i.startswith("_")]
@@ -132,12 +136,31 @@ class DrawBotDrawingTool(object):
     # Internals
     # ---------
 
+    def _reset(self):
+        self._instructionStack = []
+        self._width = 500
+        self._height = 500
+        self._frameDuration = 0.1
+
     def _addInstruction(self, callback, *args, **kwargs):
+        if callback == "newPage":
+            self._instructionStack.append([])
         if not self._instructionStack:
             self._instructionStack.append([])
         self._instructionStack[-1].append((callback, args, kwargs))
 
     def _drawInContext(self, context):
+        if self._instructionStack:
+            page = self._instructionStack[0]
+            if page and page[0][0] != "newPage":
+                page.insert(
+                    0,
+                    (
+                        "newPage",
+                        (self.width(), self.height()),
+                        {}
+                    )
+                )
         for instructionSet in self._instructionStack:
             for callback, args, kwargs in instructionSet:
                 method = getattr(context, callback)
@@ -150,6 +173,8 @@ class DrawBotDrawingTool(object):
     def imageData(self, format, *args, **kwargs):
         if format == "PNG":
             context = PNGContext(self._width, self._height)
+        elif format == "GIF":
+            context = GIFContext(self._width, self._height, self._frameDuration)
         else:
             raise NotImplementedError("format '%s' is not supported" % fileType)
         self._drawInContext(context)
@@ -160,22 +185,29 @@ class DrawBotDrawingTool(object):
     # -------------
 
     def displayImage(self, mode="fullscreen"):
-        data = self.imageData("PNG")
-        if data is None:
-            return
-        DrawBotView(data, mode)
+        if len(self._instructionStack) == 1:
+            data = self.imageData("PNG")
+            if data is None:
+                return
+            DrawBotView(data, mode)
+        else:
+            data = self.imageData("GIF")
+            path = tempfile.mkstemp(suffix=".gif")[1]
+            f = open(path, "wb")
+            f.write(data)
+            f.close()
+            console.quicklook(path)
+            os.remove(path)
 
     # ------
     # Canvas
     # ------
 
     def size(self, width, height=None):
-        if width == "screen":
-            width, height = ui.get_screen_size()
-        if height is None:
-            height = width
-        self._width = int(width)
-        self._height = int(height)
+        if not self._instructionStack:
+            self.newPage(width, height)
+        else:
+            raise DrawBotError("Can't use 'size()' after drawing has begun. Try to move it to the top of your script.")
 
     def width(self):
         return self._width
@@ -184,10 +216,31 @@ class DrawBotDrawingTool(object):
         return self._height
 
     def newDrawing(self):
-        self._instructionStack = []
+        self._reset()
 
     def endDrawing(self):
         pass
+
+    # -----
+    # Pages
+    # -----
+
+    def newPage(self, width=None, height=None):
+        if width is None and height is None:
+            width = self.width()
+            height = self.height()
+        if width == "screen":
+            width, height = ui.get_screen_size()
+        if height is None:
+            height = width
+        self._addInstruction("newPage", width, height)
+
+    # ---------
+    # Animation
+    # ---------
+
+    def frameDuration(self, seconds):
+        self._frameDuration = seconds
 
     # ------
     # States
@@ -472,13 +525,26 @@ lineCapStyles = dict(
 
 class BaseContext(object):
 
-    def __init__(self):
+    def __init__(self, width, height):
+        self.reset()
+
+    def reset(self):
         self.stateStack = []
         self.state = GraphicsState()
 
     # ------------
     # Instructions
     # ------------
+
+    # Pages
+
+    def newPage(self, width, height):
+        pass
+
+    # Animation
+
+    def frameDuration(self, seconds):
+        pass
 
     # Colors
 
@@ -596,18 +662,71 @@ class BaseContext(object):
 class PNGContext(BaseContext):
 
     def __init__(self, width, height):
-        super(PNGContext, self).__init__()
+        super(PNGContext, self).__init__(width, height)
+        self._newContext(width, height)
+
+    def _newContext(self, width, height):
+        self.reset()
         UIGraphicsBeginImageContext(CGSize(width, height))
         self._context = UIGraphicsGetCurrentContext()
         self.transform((1, 0, 0, -1, 0, height))
 
-    def imageData(self):
+    def _endContext(self):
         image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
         png = UIImagePNGRepresentation(image)
         data = objc_util.nsdata_to_bytes(png)
         return data
 
+    def imageData(self):
+        return self._endContext()
+
+
+class GIFContext(PNGContext):
+
+    def __init__(self, width, height, frameDuration):
+        super(GIFContext, self).__init__(width, height)
+        self._frameDuration = frameDuration
+        self._writtenImages = []
+        self._haveFirstFrame = False
+
+    def _storeImage(self):
+        data = self._endContext()
+        pngFile = io.BytesIO(data)
+        png = PILImage.open(pngFile)
+        gifFile = io.BytesIO()
+        png.save(gifFile, "GIF")
+        data = gifFile.getvalue()
+        self._writtenImages.append(data)
+
+    def newPage(self, width, height):
+        if self._haveFirstFrame:
+            self._storeImage()
+        self._newContext(width, height)
+        self._haveFirstFrame = True
+
+    def imageData(self):
+        self._storeImage()
+        if not self._writtenImages:
+            return None
+        if len(self._writtenImages) == 1:
+            return self._writtenImages[0]
+        imageObjects = []
+        for data in self._writtenImages:
+            f = io.BytesIO(data)
+            image = PILImage.open(f)
+            imageObjects.append(image)
+        path = tempfile.mkstemp()[1]
+        duration = 0.1
+        data = None
+        try:
+            images2gif.writeGif(path, imageObjects, self._frameDuration)
+            f = open(path, "rb")
+            data = f.read()
+            f.close()
+        finally:
+            os.remove(path)
+        return data
 
 # ----
 # View
@@ -654,10 +773,13 @@ _drawBotDrawingTool._addToNamespace(globals())
 # Test
 # ----
 
-if __name__ == "__main__":
-    bot = _drawBotDrawingTool
+def drawTest(bot, translate=(0, 0)):
+    # origin
+    bot.fill(1, 1, 1, 1)
+    bot.rect(0, 0, 500, 500)
 
-    bot.newDrawing()
+    if translate != (0, 0):
+        bot.translate(*translate)
 
     # origin
     bot.fill(0, 0, 0, 1)
@@ -725,5 +847,18 @@ if __name__ == "__main__":
     bot.rect(0, 0, 100, 100)
     bot.endDrawing()
 
-    # display
+
+
+if __name__ == "__main__":
+    bot = _drawBotDrawingTool
+    bot.newDrawing()
+    bot.frameDuration(1.0)
+
+#    drawTest(bot)
+
+    for i in range(5):
+        t = 10 * i
+        bot.newPage()
+        drawTest(bot, translate=(t, t))
+
     bot.displayImage("sheet")
