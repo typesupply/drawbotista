@@ -2,6 +2,7 @@ import math
 import random
 import warnings
 import ui
+import dialogs
 
 # ------
 # Bridge
@@ -93,7 +94,6 @@ def UIImagePNGRepresentation(image):
 quartz.UIImagePNGRepresentation.restype = cIntOrVoid
 quartz.UIImagePNGRepresentation.argtypes = [cIntOrVoid]
 
-
 # ---------
 # API Magic
 # ---------
@@ -160,24 +160,10 @@ class DrawBotDrawingTool(object):
     # -------------
 
     def displayImage(self, mode="fullscreen"):
-        modes = dict(
-            fullscreen="full_screen",
-            sheet="sheet",
-            popover="popover",
-            panel="panel",
-            sidebar="sidebar"
-        )
-        mode = modes[mode]
         data = self.imageData("PNG")
         if data is None:
             return
-        view = ui.ImageView(
-            frame=(0, 0, self._width, self._height),
-            background_color=1
-        )
-        view.content_mode = ui.CONTENT_CENTER
-        view.image = ui.Image.from_data(data)
-        view.present(mode)
+        DrawBotView(data, mode)
 
     # ------
     # Canvas
@@ -520,7 +506,10 @@ class BaseContext(object):
             path.setLineJoinStyle_(lineJoinStyles[state.lineJoin])
             path.setLineCapStyle_(lineCapStyles[state.lineCap])
             #if state.lineDash is not None:
-            #    path.setLineDash_count_phase_(dash, len(count), 0)
+            #    dash = state.lineDash
+            #    count = len(dash)
+            #    phase = 0
+            #    path.setLineDash_count_phase_(dash, count, phase)
             if state.fillColor is not None:
                 fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(*state.fillColor)
                 fillColor.set()
@@ -617,6 +606,40 @@ class PNGContext(BaseContext):
         png = UIImagePNGRepresentation(image)
         data = objc_util.nsdata_to_bytes(png)
         return data
+
+
+# ----
+# View
+# ----
+
+class DrawBotView(object):
+
+    def __init__(self, imageData, mode):
+        modes = dict(
+            fullscreen="full_screen",
+            sheet="sheet",
+            popover="popover",
+            panel="panel",
+            sidebar="sidebar"
+        )
+        mode = modes[mode]
+        self.image = ui.Image.from_data(imageData)
+        width, height = self.image.size
+        self.imageView = ui.ImageView(
+            frame=(0, 0, width, height),
+            background_color=1
+        )
+        self.imageView.image = self.image
+        self.imageView.content_mode = ui.CONTENT_CENTER
+        self.shareButton = ui.ButtonItem(
+            image=ui.Image.named("iow:ios7_upload_outline_32")
+        )
+        self.shareButton.action = self.shareButtonCallback
+        self.imageView.right_button_items = [self.shareButton]
+        self.imageView.present(mode)
+
+    def shareButtonCallback(self, sender):
+        dialogs.share_image(self.image)
 
 
 # ----
