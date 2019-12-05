@@ -198,7 +198,7 @@ class DrawBotDrawingTool(object):
         return self._height
 
     def newDrawing(self):
-        pass
+        self._instructionStack = []
 
     def endDrawing(self):
         pass
@@ -230,25 +230,29 @@ class DrawBotDrawingTool(object):
     # Shapes
     # ------
 
+    def drawPath(self, path=None):
+        assert path is not None
+        self._addInstruction("drawPath", path)
+
     def rect(self, x, y, w, h):
         path = BezierPath()
         path.rect(x, y, w, h)
-        self._addInstruction("drawPath", path)
+        self.drawPath(path)
 
     def oval(self, x, y, w, h):
         path = BezierPath()
         path.oval(x, y, w, h)
-        self._addInstruction("drawPath", path)
+        self.drawPath(path)
 
     def polygon(self, *points, **kwargs):
         path = BezierPath()
         path.polygon(*points, **kwargs)
-        self._addInstruction("drawPath", path)
+        self.drawPath(path)
 
     def line(self, point1, point2):
         path = BezierPath()
         path.line(point1, point2)
-        self._addInstruction("drawPath", path)
+        self.drawPath(path)
 
     # Path Properties
 
@@ -515,8 +519,8 @@ class BaseContext(object):
             path.setMiterLimit_(state.miterLimit)
             path.setLineJoinStyle_(lineJoinStyles[state.lineJoin])
             path.setLineCapStyle_(lineCapStyles[state.lineCap])
-            # if state.lineDash is not None:
-            #     path.set_line_dash(state.lineDash)
+            #if state.lineDash is not None:
+            #    path.setLineDash_count_phase_(dash, len(count), 0)
             if state.fillColor is not None:
                 fillColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(*state.fillColor)
                 fillColor.set()
@@ -555,7 +559,7 @@ class BaseContext(object):
             self.state.text_fontSize = fontSize
 
     def fontSize(self, fontSize):
-        self.state.text.text_fontSize = fontSize
+        self.state.text_fontSize = fontSize
 
     def textBox(self, txt, box):
         CGContextSaveGState(self._context)
@@ -629,6 +633,8 @@ _drawBotDrawingTool._addToNamespace(globals())
 if __name__ == "__main__":
     bot = _drawBotDrawingTool
 
+    bot.newDrawing()
+
     # origin
     bot.fill(0, 0, 0, 1)
     bot.rect(0, 0, 10, 10)
@@ -657,7 +663,6 @@ if __name__ == "__main__":
     bot.font("Helvetica Bold", 24)
     bot.textBox("This is some text in a box.", (200, 200, 100, 100))
     
-    
     # line
     bot.stroke(1, 1, 0, 0.5)
     bot.strokeWidth(50)
@@ -672,7 +677,22 @@ if __name__ == "__main__":
     bot.lineCap("round")
     bot.lineJoin("round")
     bot.polygon((50, 50), (0, 300), (250, 250), (300, 0), close=False)
-    
+
+    # BezierPath
+    path = BezierPath()
+    for i in range(20):
+        x = 300 * random()
+        y = 300 * random()
+        if i == 0:
+            path.moveTo((x, y))
+        else:
+            path.lineTo((x, y))
+    path.endPath()
+    bot.fill(None)
+    bot.stroke(1, 0, 0, 0.25)
+    bot.strokeWidth(10)
+    bot.drawPath(path)
+
     # scale
     bot.scale(3)
     bot.fill(None)
