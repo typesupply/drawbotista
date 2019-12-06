@@ -158,12 +158,14 @@ class DrawBotDrawingTool(object):
                     0,
                     (
                         "newPage",
-                        (self.width(), self.height()),
+                        [],
                         {}
                     )
                 )
         for instructionSet in self._instructionStack:
             for callback, args, kwargs in instructionSet:
+                if callback == "newPage":
+                    args = (self._width, self._height)
                 method = getattr(context, callback)
                 method(*args, **kwargs)
 
@@ -209,7 +211,8 @@ class DrawBotDrawingTool(object):
 
     def size(self, width, height=None):
         if not self._instructionStack:
-            self.newPage(width, height)
+            self._width = width
+            self._height = height
         else:
             raise DrawBotError("Can't use 'size()' after drawing has begun. Try to move it to the top of your script.")
 
@@ -237,7 +240,9 @@ class DrawBotDrawingTool(object):
             width, height = ui.get_screen_size()
         if height is None:
             height = width
-        self._addInstruction("newPage", width, height)
+        self._width = width
+        self._height = height
+        self._addInstruction("newPage")
 
     # ---------
     # Animation
