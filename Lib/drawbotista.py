@@ -268,10 +268,26 @@ class DrawBotDrawingTool(object):
     # Colors
     # ------
 
+    def _normalizeColor(self, r, g, b, a):
+        if r is None:
+            return None
+        if g is None and b is None:
+            g = r
+            b = r
+        elif b is None:
+            a = g
+            g = r
+            b = r
+        if a is None:
+            a = 1
+        return (r, g, b, a)
+
     def fill(self, r, g=None, b=None, alpha=1):
+        r, g, b, alpha = self._normalizeColor(r, g, b, alpha)
         self._addInstruction("fill", r, g, b, alpha)
 
     def stroke(self, r, g=None, b=None, alpha=1):
+        r, g, b, alpha = self._normalizeColor(r, g, b, alpha)
         self._addInstruction("stroke", r, g, b, alpha)
 
     # ------
