@@ -270,7 +270,7 @@ class DrawBotDrawingTool(object):
 
     def _normalizeColor(self, r, g, b, a):
         if r is None:
-            return None
+            return None, None, None, None
         if g is None and b is None:
             g = r
             b = r
