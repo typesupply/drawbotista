@@ -12,10 +12,46 @@ I've seen lots of references to installing modules with [StaSH](https://github.c
 
 ## To Do:
 
-- Implement `text`
-- Implement `lineDash`
-- Make the `displayImage` command use a sheet that has a share button that will allow saving the image, sending via iMessage and all that stuff.
+### Easy Stuff
 
+- linearGradient
+- radialGradient
+- shadow
+- drawing commands that go directly to the canvas
+- BezierPath.arc
+- BezierPath.arcTo
+- BezierPath.qCurveTo
+- clipPath
+
+### Text
+
+- text
+- text align
+- return overflow text in textBox
+- support BezierPath in textBox
+- textSize
+- textOverflow
+- textBoxBaselines
+- installedFonts
+- hyphenation
+- lineHeight
+- tracking
+- baselineShift
+- openTypeFeatures
+- tabs
+
+### Image
+
+- image
+- imageSize
+- imagePixelColor
+- imageResolution
+
+### Big Stuff
+
+- FormattedString
+- ImageObject
+- PDF export
 
 
 ## API
