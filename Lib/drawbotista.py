@@ -270,7 +270,7 @@ class DrawBotDrawingTool(object):
 
     def _normalizeColor(self, r, g, b, a):
         if r is None:
-            return None
+            return None, None, None, None
         if g is None and b is None:
             g = r
             b = r
@@ -449,10 +449,11 @@ class BezierPath(object):
         self._path.moveToPoint_(CGPoint(*point))
 
     def lineTo(self, point):
-        self._path.lineToPoint_(CGPoint(*point))
+        self._path.addLineToPoint_(CGPoint(*point))
 
     def curveTo(self, *points):
-        self._path.curveToPoint_controlPoint1_controlPoint2_(CGPoint(*points[2]), *points[0], *points[1])
+        print(points)
+        self._path.addCurveToPoint_controlPoint1_controlPoint2_(CGPoint(*points[2]), CGPoint(*points[0]), CGPoint(*points[1]))
 
     def closePath(self):
         self._path.closePath()
